@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 19 * * *"   # nightly pre-indexer (zoom.lk backfill) at 19:17 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Typecheck, tests, dry-run bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies (lockfile-pinned)
+        run: npm ci
+
+      - name: Typecheck (Worker + tests, strict, failures are fatal)
+        run: npm run typecheck
+
+      - name: Unit tests (TypeScript)
+        run: node --test tests/test_worker.ts
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test-only Python dependency
+        run: python3 -m pip install -r tests/requirements.txt
+
+      - name: Unit tests (Python toolkit + pre-indexer)
+        run: python3 -m pytest tests/test_srt_tools.py -q
+
+      - name: Python syntax check
+        run: python3 -m py_compile scripts/*.py
+
+      - name: Pre-indexer offline self-test (SigV4, R2 key contract, robots)
+        run: python3 scripts/preindex.py --selftest
+
+      - name: Worker bundle dry-run (no Cloudflare credentials needed)
+        run: npx wrangler deploy --dry-run --outdir dist
+
+      - name: Guard — only small synthetic archives may be tracked
+        run: |
+          bad=""
+          while IFS= read -r f; do
+            case "$f" in
+              tests/fixtures/*) [ "$(stat -c%s "$f")" -le 8192 ] || bad="$bad $f" ;;
+              *) bad="$bad $f" ;;
+            esac
+          done < <(git ls-files '*.zip' '*.rar' '*.7z')
+          if [ -n "$bad" ]; then
+            echo "Unexpected archive files tracked in git:$bad"
+            exit 1
+          fi
+          echo "OK: no stray or oversized archives tracked."
+
+  deploy:
+    name: Deploy (only when the secret exists)
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # secrets cannot be used directly in a job-level `if`, so probe once here
+      - id: guard
+        name: Check for CLOUDFLARE_API_TOKEN
+        run: |
+          if [ -n "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::CLOUDFLARE_API_TOKEN is not set — skipping deploy (this is not a failure)."
+          fi
+
+      - name: Deploy to Cloudflare Workers
+        if: steps.guard.outputs.enabled == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # Runtime secrets are set once with `wrangler secret put`:
+          # GEMINI_API_KEY, GOOGLE_TRANSLATE_KEY (optional), SUBDL_API_KEY (optional)
+
+  preindex:
+    name: Nightly pre-indexer → R2
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install archive extractors (best effort)
+        run: sudo apt-get update && sudo apt-get install -y p7zip-full unrar-free || true
+
+      - name: Pre-index zoom.lk archives (dry run when R2 secrets are absent)
+        run: python3 scripts/preindex.py
+        env:
+          # Read/write R2 token scoped to the bucket (see README step 4).
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}   # https://<account-id>.r2.cloudflarestorage.com
+          R2_BUCKET: subs-bucket

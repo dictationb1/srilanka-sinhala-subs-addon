@@ -1,0 +1,29 @@
+# dependencies
+node_modules/
+
+# build & local Cloudflare state
+dist/
+out/
+.wrangler/
+.dev.vars
+.env
+.env.*
+
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# archives / uploads (never commit zips: fixtures are generated, not downloaded)
+*.zip
+*.rar
+*.7z
+!tests/fixtures/*.zip
+!tests/fixtures/*.rar
+
+# editor / OS
+.DS_Store
+Thumbs.db
+*.log
