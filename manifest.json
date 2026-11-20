@@ -1,0 +1,15 @@
+{
+  "id": "srilanka.sinhala.subs",
+  "version": "1.1.0",
+  "name": "Sri Lanka Sinhala Subtitles",
+  "description": "සිංහල උපසිරැසි — piratelk.com + zoom.lk + OpenSubtitles, plus English→Sinhala translation when no Sinhala file exists.",
+  "resources": [
+    {
+      "name": "subtitles",
+      "types": ["movie", "series"],
+      "idPrefixes": ["tt"]
+    }
+  ],
+  "types": ["movie", "series"],
+  "idPrefixes": ["tt"]
+}

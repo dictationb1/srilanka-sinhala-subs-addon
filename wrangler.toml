@@ -1,0 +1,40 @@
+# Cloudflare Worker configuration — deploys with ZERO setup.
+#
+# `src/` contains no Node-only APIs (no fs / path / child_process / Buffer), so
+# nodejs_compat is NOT needed and is deliberately not enabled.
+name = "srilanka-sinhala-subs-addon"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+
+# Free-tier budget notes (verified against CF Worker limits):
+#  - CPU: zip/gzip via fflate (pure JS, ~1 ms per 100 KB); translation runs in
+#    ctx.waitUntil (or inline when no KV/R2 is bound, where waitUntil would have
+#    nowhere to store the result)
+#  - Subrequests 50: 3-4 source searches + 1 title lookup + <=6 Gemini batches
+#  - KV free tier: 100k reads/day, 1k writes/day — cache only, never required
+
+[vars]
+TRANSLATOR_PROVIDER = "gemini"   # "gemini" (default) | "google_v3"
+
+# ── OPTIONAL: KV (cache, translation lock, title cache) ──────────────────────
+# Create with:  wrangler kv namespace create SUBS_INDEX
+# Then uncomment and paste the printed id. Without it the addon still works:
+# subtitle rows are self-describing tokens, so nothing 404s.
+#
+# [[kv_namespaces]]
+# binding = "SUBS_INDEX"
+# id = "<paste the id printed by wrangler>"
+
+# ── OPTIONAL: R2 (permanent cache + nightly pre-indexed RAR/7z output) ───────
+# Create with:  wrangler r2 bucket create subs-bucket
+# Then uncomment. Without it, RAR/7z archives return 202 + Retry-After until the
+# nightly pre-indexer has produced output (and there is nowhere to read it from).
+#
+# [[r2_buckets]]
+# binding = "SUBS_BUCKET"
+# bucket_name = "subs-bucket"
+
+# Secrets (set with `wrangler secret put <NAME>`):
+#   GEMINI_API_KEY        Google AI Studio key (free tier) — primary translator
+#   GOOGLE_TRANSLATE_KEY  optional Google Cloud Translation fallback
+#   SUBDL_API_KEY         optional SubDL source (off by default)

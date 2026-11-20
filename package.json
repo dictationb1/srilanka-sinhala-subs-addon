@@ -1,0 +1,25 @@
+{
+  "name": "srilanka-sinhala-subs-addon",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Stremio Sinhala subtitle addon on Cloudflare Workers (piratelk + zoom.lk + OpenSubtitles + Gemini translation)",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node --test tests/test_worker.ts",
+    "test:py": "python3 -m pytest tests/test_srt_tools.py -q",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "dry-run": "wrangler deploy --dry-run --outdir dist",
+    "fixtures": "python3 scripts/make_fixtures.py"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261120.1",
+    "@types/node": "^22.10.2",
+    "typescript": "^5.6.0",
+    "wrangler": "^4.40.0"
+  }
+}
